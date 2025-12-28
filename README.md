@@ -1,187 +1,189 @@
-# faq-prediction — مقایسه STS و LLM
+# faq-prediction — STS vs LLM Comparison
 
-این گزارش در راستای پروژه پیش‌بینی/رده‌بندی سوالات متداول بانکی (FAQ Matching) با دو رویکرد **STS** و **LLM** تهیه شده است.
+This report is prepared as part of a bank FAQ prediction/classification project (FAQ Matching) using two approaches: **STS** and **LLM**.
 
-هدف پروژه: برای هر سوال کاربر (در شیت `samples`) یک `idx` از شیت `faq` پیش‌بینی شود و سپس با برچسب واقعی `gt_idx` مقایسه گردد.
-در این پروژه برای تصحیح و تکمیل کد به صورت محدود از GPT-5.1-codex استفاده شده است.
+Project goal: for each user question (in the `samples` sheet), predict an `idx` from the `faq` sheet and then compare it with the ground-truth label `gt_idx`.  
+In this project, GPT-5.1-codex was used in a limited manner to correct and complete the code.
 
-## 1) معیارهای ارزیابی (Metrics)
+## 1) Evaluation Metrics
 
-در این پروژه معیار اصلی **Top‑1** است.
+The main metric in this project is **Top-1**.
 
-### Top‑1 Accuracy و Top‑1 Error
+### Top-1 Accuracy and Top-1 Error
 
-اگر برای نمونه‌ی $i$ برچسب واقعی $y_i$ و پیش‌بینی $\hat{y}_i$ باشد:
-
-$$
-	{Accuracy} = \frac{1}{N}\sum_{i=1}^{N} \mathbf{1}[\hat{y}_i = y_i]
-$$
+If for sample $i$ the ground-truth label is $y_i$ and the prediction is $\hat{y}_i$:
 
 $$
-	{Error} = \frac{1}{N}\sum_{i=1}^{N} \mathbf{1}[\hat{y}_i \ne y_i] = 1 - \text{Accuracy}
+{Accuracy} = \frac{1}{N}\sum_{i=1}^{N} \mathbf{1}[\hat{y}_i = y_i]
 $$
 
-### Top‑K Accuracy (Hit@K / Acc@K)
+$$
+{Error} = \frac{1}{N}\sum_{i=1}^{N} \mathbf{1}[\hat{y}_i \ne y_i] = 1 - \text{Accuracy}
+$$
 
-اگر $R_i^{(K)}$ مجموعه/لیست $K$ پیش‌بینی برتر برای نمونه‌ی $i$ باشد:
+### Top-K Accuracy (Hit@K / Acc@K)
+
+If $R_i^{(K)}$ is the set/list of the top-$K$ predictions for sample $i$:
 
 $$
-	{Acc@K} = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[y_i \in R_i^{(K)}]
+{Acc@K} = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[y_i \in R_i^{(K)}]
 $$
+
 ---
 
-## 2) روش اول — STS (Embedding Similarity)
+## 2) Method 1 — STS (Embedding Similarity)
 
-### ایده کلی
+### General Idea
 
-در STS، متن‌ها به بردارهای عددی (Embedding) تبدیل می‌شوند و سپس با معیار شباهت (که در اینجا فاصله کسینوسی است) نزدیک‌ترین سوال FAQ انتخاب می‌شود.
+In STS, texts are converted into numerical vectors (embeddings), and then the closest FAQ question is selected using a similarity metric (cosine distance in this case).
 
-### مدل استفاده‌شده
+### Model Used
 
-- مدل امبدینگ چندزبانه مناسب فارسی: `intfloat/multilingual-e5-base`
+- Multilingual embedding model suitable for Persian: `intfloat/multilingual-e5-base`
 
-در E5 باید نقش‌ها مشخص باشد:
+In E5, roles must be specified:
 
-- سوال‌های FAQ به صورت `passage: ...`
-- سوال کاربر به صورت `query: ...`
+- FAQ questions as `passage: ...`
+- User question as `query: ...`
 
-### پیش‌پردازش فارسی
+### Persian Preprocessing
 
-برای کاهش نویز و افزایش شباهت معنایی، نرمال‌سازی انجام شد:
+To reduce noise and increase semantic similarity, normalization was applied:
 
-- تبدیل `ي`→`ی` و `ك`→`ک`
-- حذف/تبدیل برخی کاراکترهای نامرئی مثل \u200c و…
-- یکدست‌سازی فاصله‌ها
+- Convert `ي` → `ی` and `ك` → `ک`
+- Remove/convert some invisible characters such as `\u200c`, etc.
+- Normalize spacing
 
-### محاسبه شباهت و پیش‌بینی
+### Similarity Computation and Prediction
 
-اگر بردار FAQ شماره $j$ را $e(f_j)$ و بردار نمونه $i$ را $e(q_i)$ بگیریم:
+Let the embedding of FAQ item $j$ be $e(f_j)$ and the embedding of sample $i$ be $e(q_i)$:
 
 $$
 s_{j,i} = \cos(e(f_j), e(q_i))
 $$
- چون `normalize_embeddings=True` است، بردارها واحد می‌شوند و کسینوس شباهت برابر ضرب داخلی است.
 
-پیش‌بینی Top‑1:
+Since `normalize_embeddings=True`, vectors are unit-normalized and cosine similarity equals the dot product.
+
+Top-1 prediction:
 
 $$
 \hat{y}_i = \text{idx}\left(\arg\max_j s_{j,i}\right)
 $$
 
-و امتیاز Top‑1:
+Top-1 score:
 
 $$
 s_i = \max_j s_{j,i}
 $$
 
-### خروجی‌ها
+### Outputs
 
-در شیت `samples` ستون‌های زیر اضافه شدند:
+The following columns were added to the `samples` sheet:
 
-- `sts_idx`: پیش‌بینی `idx`
-- `sts_score`: امتیاز شباهت Top‑1
+- `sts_idx`: predicted `idx`
+- `sts_score`: Top-1 similarity score
 
 ---
 
-## 3) روش دوم — LLM (مدل زبانی بزرگ) با Prompting
+## 3) Method 2 — LLM (Large Language Model) with Prompting
 
-### ایده کلی
+### General Idea
 
-در رویکرد LLM، برای هر نمونه:
+In the LLM approach, for each sample:
 
-- کل لیست FAQ (با `idx` و متن سوال) + سوال کاربر در Prompt قرار می‌گیرد.
-- مدل باید دقیقاً یک `idx` را انتخاب کند.
+- The full FAQ list (with `idx` and question text) plus the user question is placed in the prompt.
+- The model must select **exactly one** `idx`.
 
-از آنجا که تعداد FAQها کم است (۲۴ ردیف)، محدودیت طول کانتکست مشکل‌ساز نیست.
+Since the number of FAQs is small (24 rows), context length is not an issue.
 
-برای تست این روش از دو مدل و پرامپت هایی با دو زبان فارسی و انگلیسی استفاده شد.
+To test this method, two models and prompts in both Persian and English were used.
 
-### زیرساخت اجرا
+### Execution Infrastructure
 
-برای اجرای مدل ها از سیستمی با 48 گیگابایت رم و 8 هسته cpu و کارت گرافیک L4 استفاده شد
+Models were executed on a system with 48 GB RAM, 8 CPU cores, and an L4 GPU.
 
-### مدل‌ها
+### Models
 
-برای مقایسه، حداقل دو مدل پیشنهاد شد:
+For comparison, at least two models were selected:
 
 - `google/gemma-3-4b-it`
 - `Qwen/Qwen2.5-7B-Instruct`
 
-### Prompt و قالب خروجی
+### Prompt and Output Format
 
-برای کاهش خطای parse و افزایش پایایی:
+To reduce parsing errors and increase stability:
 
-- خروجی باید فقط JSON باشد:
-
+- Output must be JSON only, in the following format:
 ```json
 { "idx": 12 }
 ```
+- Generation parameters are set deterministically (e.g., `temperature=0`).
 
-و پارامترهای تولید به صورت تعیین‌پذیر تنظیم می‌شوند (مثل `temperature=0`).
+### Why `parse_ok`
 
-### چرایی `parse_ok`
-
-ممکن است LLM خروجی غیرقابل‌ پارس بدهد (متن اضافه، JSON ناقص، چند مقدار idx و…)
-بنابراین در کنار دقت، نرخ قابل‌پارس بودن نیز گزارش می‌شود:
+The LLM may produce unparsable output (extra text, incomplete JSON, multiple idx values, etc.).  
+Therefore, alongside accuracy, the parse success rate is also reported:
 
 $$
-	{parse\_ok\_rate} = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\text{parse\_ok}_i]
+{parse\_ok\_rate} = \frac{1}{N}\sum_{i=1}^{N}\mathbf{1}[\text{parse ok}_i]
 $$
 
-### چالش ها
-دو مدل نامبرده شده با یک پرامپت ساده به خروجی مناسبی نمیرسیدند که عمدتاً مشکل از parse خروجی بود. برای حل این مشکل از چند پرامپت مختلف استفاده شد. در نهایت بهترین روش استفاده از چند نمونه یا تکنیک few-shot بود.
+### Challenges
 
-با این روش هر دو مدل در زبان انگلیسی به parse_rate=1 رسیدند. همچنین برای اطمینان یک بخش retry هم استفاده شد که اگر برای یکی از نمونه های خروجی مناسب نبود دوباره توسط مدل تست شود.
-با توجه به نتایج پایین این نشان میدهد که پرامپت های انگلیسی با مثال بهترین گزینه بودند.
+The two mentioned models did not produce satisfactory outputs with a simple prompt, mainly due to output parsing issues.  
+To address this, several different prompts were tested. Eventually, the best approach was using multiple examples or a few-shot technique.
+
+With this method, both models reached `parse_rate = 1` in English.  
+Additionally, a retry mechanism was added so that if a sample’s output was invalid, it would be re-evaluated by the model.
+
+Given the results, this shows that **English prompts with examples** were the best option.
 
 ---
 
-## 4) نتایج
+## 4) Results
 
-### نتایج STS
+### STS Results
 
-- Top‑1 Accuracy: **0.5914**
-- Top‑1 Error: **0.4086**
+- Top-1 Accuracy: **0.5914**
+- Top-1 Error: **0.4086**
 - Acc@3: **0.8387**
 
-
-### نتایج LLM (برای هر مدل جدا)
-
+### LLM Results (per model)
 
 EN - gemma-3-4b-it:
 
-- Overall Accuracy (خروجی‌های نامعتبر هم به‌عنوان اشتباه): **0.7849**
+- Overall Accuracy (invalid outputs counted as errors): **0.7849**
 - parse_ok_rate: **1.0**
 - Error: **0.2150**
-- Run time(ms/sample): **13.89**
+- Run time (ms/sample): **13.89**
 
 EN - Qwen2.5-7B-Instruct:
 
-- Overall Accuracy (خروجی‌های نامعتبر هم به‌عنوان اشتباه): **0.8064**
+- Overall Accuracy (invalid outputs counted as errors): **0.8064**
 - parse_ok_rate: **1.0**
 - Error: **0.1935**
-- Run time(ms/sample): **40.63**
+- Run time (ms/sample): **40.63**
 
 FA - gemma-3-4b-it:
 
-- Overall Accuracy (خروجی‌های نامعتبر هم به‌عنوان اشتباه): **0.7311**
+- Overall Accuracy (invalid outputs counted as errors): **0.7311**
 - parse_ok_rate: **1.0**
 - Error: **0.2688**
-- Run time(ms/sample): **13.68**
+- Run time (ms/sample): **13.68**
 
 FA - Qwen2.5-7B-Instruct:
 
-- Overall Accuracy (خروجی‌های نامعتبر هم به‌عنوان اشتباه): **0.6774**
+- Overall Accuracy (invalid outputs counted as errors): **0.6774**
 - parse_ok_rate: **0.8924**
 - Error: **0.3225**
-- Run time(ms/sample): **44.44**
+- Run time (ms/sample): **44.44**
 
 ---
 
-## 5) مقایسه مدل ها و جمع بندی
+## 5) Model Comparison and Summary
 
-با توجه به نتایج به دست آمده مدل های زبانی نتایج بهتری کسب کردند و حتی در مواردی خطای top-1 آنها مشابه خطای top-3 مدل STS بود.
-در مورد زبان و مدل های زبانی، مدل Qwen در زبان انگلیسی خروجی بهتری کسب کرده است. در صورتی که مدل gemma بر روی هر دو زبان خروجی مناسبی دارد و سرعت پردازش هر پرامپ بسیار پایین تر از مدل Qwen است(تقریبا 2.9 برابر سریع تر!)
+Based on the results, LLMs achieved better performance overall, and in some cases their Top-1 error was comparable to the Top-3 error of the STS model.
 
+Regarding language and LLMs, the Qwen model performed better in English. Meanwhile, the Gemma model produced solid results in both languages and had significantly faster inference per prompt compared to Qwen (approximately **2.9× faster**).
 
 ---
